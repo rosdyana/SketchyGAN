@@ -7,16 +7,38 @@ from data_processing.tfrecord import *
 from scipy import ndimage
 from config import Config
 
-
+wildcard_pattern = "*"
 # TODO Change to Dataset API
-sketchy_dir = '../training_data/sketchy'
-flickr_dir = '../training_data/flickr_output'
+# sketchy_dir = '../training_data/sketchy'
+# flickr_dir = '../training_data/flickr_output'
+sketchy_dir = './Datasets/Sketchy/rendered_256x256/256x256/sketch/tx_000000000000/'
+flickr_dir = './Datasets/Sketchy/rendered_256x256/256x256/photo/tx_000000000000/'
 
 
-paired_filenames_1 = [os.path.join(sketchy_dir, f) for f in os.listdir(sketchy_dir)
-                      if os.path.isfile(os.path.join(sketchy_dir, f))]
-paired_filenames_2 = [os.path.join(flickr_dir, f) for f in os.listdir(flickr_dir)
-                      if os.path.isfile(os.path.join(flickr_dir, f))]
+def getListOfFiles(dirName):
+    # create a list of file and sub directories
+    # names in the given directory
+    listOfFile = os.listdir(dirName)
+    allFiles = list()
+    # Iterate over all the entries
+    for entry in listOfFile:
+        # Create full path
+        fullPath = os.path.join(dirName, entry)
+        # If entry is a directory then get the list of files in this directory
+        if os.path.isdir(fullPath):
+            allFiles = allFiles + getListOfFiles(fullPath)
+        else:
+            allFiles.append(fullPath)
+
+    return allFiles
+
+
+# paired_filenames_1 = [os.path.join(sketchy_dir, f) for f in os.listdir(sketchy_dir)
+#                       if os.path.exists(os.path.join(sketchy_dir, f))]
+# paired_filenames_2 = [os.path.join(flickr_dir, f) for f in os.listdir(flickr_dir)
+#                       if os.path.exists(os.path.join(flickr_dir, f))]
+paired_filenames_1 = getListOfFiles(sketchy_dir)
+paired_filenames_2 = getListOfFiles(flickr_dir)
 
 print("paired file sketchy num: %d" % len(paired_filenames_1))
 print("paired file flickr num: %d" % len(paired_filenames_2))
@@ -27,13 +49,16 @@ classes_info = './data_processing/classes.csv'
 classes = read_csv(classes_info)
 classes_id = [item['Name'] for item in classes]
 for name in paired_filenames_1:
-    name = os.path.splitext(os.path.split(name)[1])[0].split('_coco_')[0]
+    # name = os.path.splitext(os.path.split(name)[1])[0].split('_coco_')[0]
+    name = name.split("/")[7]
+    # print(name)
     class_id = classes_id.index(name)
     if class_id not in class_mapping:
         class_mapping.append(class_id)
 class_mapping = sorted(class_mapping)
 for name in paired_filenames_2:
-    name = os.path.splitext(os.path.split(name)[1])[0].split('_coco_')[0]
+    # name = os.path.splitext(os.path.split(name)[1])[0].split('_coco_')[0]
+    name = name.split("/")[7]
     class_id = classes_id.index(name)
     if class_id not in class_mapping:
         print(name)
@@ -55,8 +80,10 @@ def map_class_id_to_labels(batch_class_id, class_mapping=class_mapping):
     batch_class_id_backup = tf.identity(batch_class_id)
 
     for i in range(num_classes):
-        comparison = tf.equal(batch_class_id_backup, tf.constant(class_mapping[i], dtype=tf.int64))
-        batch_class_id = tf.where(comparison, tf.ones_like(batch_class_id) * i, batch_class_id)
+        comparison = tf.equal(batch_class_id_backup, tf.constant(
+            class_mapping[i], dtype=tf.int64))
+        batch_class_id = tf.where(comparison, tf.ones_like(
+            batch_class_id) * i, batch_class_id)
     ret_tensor = tf.squeeze(tf.one_hot(tf.cast(batch_class_id, dtype=tf.int32), num_classes,
                                        on_value=1, off_value=0, axis=1))
     return ret_tensor
@@ -111,11 +138,13 @@ def get_paired_input(paired_filenames, test_mode, distance_map=True, img_dim=(25
     )
 
     if img_dim[0] < 64:
-        image = tf.image.decode_jpeg(features['image_small_jpeg'], fancy_upscaling=fancy_upscaling)
+        image = tf.image.decode_jpeg(
+            features['image_small_jpeg'], fancy_upscaling=fancy_upscaling)
         image = tf.cast(image, tf.float32)
         image = tf.reshape(image, (64, 64, 3))
     else:
-        image = tf.image.decode_jpeg(features['image_jpeg'], fancy_upscaling=fancy_upscaling)
+        image = tf.image.decode_jpeg(
+            features['image_jpeg'], fancy_upscaling=fancy_upscaling)
         image = tf.cast(image, tf.float32)
         image = tf.reshape(image, (256, 256, 3))
 
@@ -124,7 +153,8 @@ def get_paired_input(paired_filenames, test_mode, distance_map=True, img_dim=(25
             sketch = tf.image.decode_png(features['dist_map_small_png'], channels=3) if distance_map \
                 else tf.image.decode_png(features['sketch_small_png'], channels=3)
         else:
-            sketch = tf.image.decode_png(features['sketch_small_png'], channels=3)
+            sketch = tf.image.decode_png(
+                features['sketch_small_png'], channels=3)
         sketch = tf.cast(sketch, tf.float32)
         sketch = tf.reshape(sketch, (64, 64, 3))
     else:
@@ -150,8 +180,10 @@ def get_paired_input(paired_filenames, test_mode, distance_map=True, img_dim=(25
 
     # Resize
     if img_dim[0] != 256:
-        image = tf.image.resize_images(image, img_dim, method=tf.image.ResizeMethod.BILINEAR)
-        sketch = tf.image.resize_images(sketch, img_dim, method=tf.image.ResizeMethod.BILINEAR)
+        image = tf.image.resize_images(
+            image, img_dim, method=tf.image.ResizeMethod.BILINEAR)
+        sketch = tf.image.resize_images(
+            sketch, img_dim, method=tf.image.ResizeMethod.BILINEAR)
     # if img_dim[0] > 256:
     #     image = tf.image.resize_images(image, img_dim, method=tf.image.ResizeMethod.BILINEAR)
     #     sketch = tf.image.resize_images(sketch, img_dim, method=tf.image.ResizeMethod.BILINEAR)
@@ -166,8 +198,10 @@ def get_paired_input(paired_filenames, test_mode, distance_map=True, img_dim=(25
     # image_large = tf.image.random_hue(image_large, max_delta=0.05)
 
     # Normalization
-    image = (image - tf.reduce_min(image)) / (tf.reduce_max(image) - tf.reduce_min(image) + 1)
-    image += tf.random_uniform(shape=image.shape, minval=0., maxval=1. / 256)  # dequantize
+    image = (image - tf.reduce_min(image)) / \
+        (tf.reduce_max(image) - tf.reduce_min(image) + 1)
+    image += tf.random_uniform(shape=image.shape,
+                               minval=0., maxval=1. / 256)  # dequantize
     sketch = sketch / 255.
 
     image = image * 2. - 1
@@ -266,7 +300,8 @@ def build_input_queue_paired_mixed(batch_size, proportion=None, data_format='NCH
             paired_filenames_2, test_mode=False, distance_map=distance_map, img_dim=SIZE[small], data_format=data_format)
         return image_f, sketch_f, class_id_f, is_valid_f
 
-    idx = tf.floor(tf.random_uniform(shape=(), minval=0., maxval=1., dtype=tf.float32) + proportion)
+    idx = tf.floor(tf.random_uniform(shape=(), minval=0.,
+                                     maxval=1., dtype=tf.float32) + proportion)
     sk_list = _sk_list()
     f_list = _f_list()
     image, sketch, class_id, is_valid = [
